@@ -8,14 +8,15 @@
   "description": "Aplikasi kamera timestamp untuk survei dan inspeksi",
   "icons": [
     {
-      "src": "/vite.svg",
+      "src": "/logo.jpg",
       "sizes": "192x192",
-      "type": "image/svg+xml"
+      "type": "image/jpeg"
     },
     {
-      "src": "/vite.svg",
+      "src": "/logo.jpg",
       "sizes": "512x512",
-      "type": "image/svg+xml"
+      "type": "image/jpeg",
+      "purpose": "any maskable"
     }
   ]
 }
