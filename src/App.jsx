@@ -29,15 +29,15 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [isFlashing, setIsFlashing] = useState(false);
   
-  // Settings State
+  // Settings State - Changed key to v2 to force new defaults for existing users
   const [settings, setSettings] = useState(() => {
-    const saved = localStorage.getItem('timestamp_settings');
+    const saved = localStorage.getItem('timestamp_settings_v2');
     return saved ? JSON.parse(saved) : {
-      companyName: 'AURA Survey & Inspection',
-      surveyorName: 'John Doe',
+      companyName: 'PT. AFA TOMBUKU PRATAMA',
+      surveyorName: 'daus',
       surveyCode: 'SRV-2026-09',
       selectedLogo: 'LOGO AFA (1).png',
-      locationName: 'Gedung Pusat' // Manual location input
+      locationName: 'Gedung Pusat'
     };
   });
   
@@ -71,7 +71,8 @@ function App() {
     getLocation();
     
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    setWatermarkPos({ x: 16, y: window.innerHeight - 200 }); // adjust initial Y
+    // Adjusted initial Y to be higher so it doesn't block the shutter button
+    setWatermarkPos({ x: 16, y: Math.max(50, window.innerHeight - 380) });
     
     const handleResize = () => {
       if (watermarkRef.current) {
@@ -149,19 +150,21 @@ function App() {
 
   const saveSettings = (e) => {
     e.preventDefault();
-    localStorage.setItem('timestamp_settings', JSON.stringify(settings));
+    localStorage.setItem('timestamp_settings_v2', JSON.stringify(settings));
     setShowSettings(false);
   };
 
   const handleInstallClick = async () => {
     if (isIOS) {
-      alert("Untuk install di iOS: Tekan tombol 'Share' (ikon panah ke atas) di menu Safari, lalu pilih 'Add to Home Screen'.");
+      alert("Untuk install di iOS: Tekan ikon 'Share' (panah ke atas) di menu Safari bawah, lalu gulir dan pilih 'Add to Home Screen'.");
     } else if (deferredPrompt) {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
       if (outcome === 'accepted') {
         setDeferredPrompt(null);
       }
+    } else {
+      alert("Instalasi otomatis tidak didukung saat ini. Anda bisa menginstalnya lewat menu browser (Titik Tiga di pojok kanan atas Chrome) lalu pilih 'Add to Home screen' / 'Install App'.");
     }
   };
 
@@ -377,17 +380,16 @@ function App() {
               </button>
             </div>
             
-            {(deferredPrompt || isIOS) && (
-              <div className="install-banner">
-                <div className="install-text">
-                  <strong>Install Aplikasi</strong>
-                  <p>Pasang aplikasi ini di layar utama HP Anda.</p>
-                </div>
-                <button className="btn-install" onClick={handleInstallClick}>
-                  <Download size={16} /> Install
-                </button>
+            {/* Always show the install banner, handle clicks dynamically */}
+            <div className="install-banner">
+              <div className="install-text">
+                <strong>Install Aplikasi</strong>
+                <p>Pasang di Home Screen Anda.</p>
               </div>
-            )}
+              <button className="btn-install" onClick={handleInstallClick}>
+                <Download size={16} /> Install
+              </button>
+            </div>
 
             <form onSubmit={saveSettings}>
               <div className="form-group">
