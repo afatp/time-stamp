@@ -3,6 +3,22 @@ import { Settings, Camera, RefreshCcw, X, MapPin, Download } from 'lucide-react'
 import { format } from 'date-fns';
 import './App.css';
 
+// Helper for DMS Coordinates
+function toDMS(coordinate, type) {
+  const absolute = Math.abs(coordinate);
+  const degrees = Math.floor(absolute);
+  const minutesNotTruncated = (absolute - degrees) * 60;
+  const minutes = Math.floor(minutesNotTruncated);
+  const seconds = ((minutesNotTruncated - minutes) * 60).toFixed(1);
+  let direction = '';
+  if (type === 'lat') {
+    direction = coordinate >= 0 ? 'N' : 'S';
+  } else {
+    direction = coordinate >= 0 ? 'E' : 'W';
+  }
+  return `${degrees}° ${minutes}' ${seconds}" ${direction}`;
+}
+
 function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -20,12 +36,13 @@ function App() {
       companyName: 'AURA Survey & Inspection',
       surveyorName: 'John Doe',
       surveyCode: 'SRV-2026-09',
-      selectedLogo: 'LOGO AFA (1).png'
+      selectedLogo: 'LOGO AFA (1).png',
+      locationName: 'Gedung Pusat' // Manual location input
     };
   });
   
-  // Location & Time State
-  const [location, setLocation] = useState({ lat: 0, lng: 0, address: 'Mengambil lokasi...', accuracy: 0 });
+  // Coordinate & Time State
+  const [coords, setCoords] = useState({ lat: 0, lng: 0, accuracy: 0 });
   const [isLocating, setIsLocating] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -42,7 +59,6 @@ function App() {
   const logoImage = useRef(new Image());
 
   useEffect(() => {
-    // Detect iOS
     const userAgent = window.navigator.userAgent.toLowerCase();
     setIsIOS(/iphone|ipad|ipod/.test(userAgent));
 
@@ -51,12 +67,11 @@ function App() {
       setDeferredPrompt(e);
     });
     
-    // Start Camera
     initCamera(facingMode);
     getLocation();
     
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    setWatermarkPos({ x: 16, y: window.innerHeight - 150 });
+    setWatermarkPos({ x: 16, y: window.innerHeight - 200 }); // adjust initial Y
     
     const handleResize = () => {
       if (watermarkRef.current) {
@@ -74,7 +89,6 @@ function App() {
     };
   }, []);
 
-  // Update Logo Image Source
   useEffect(() => {
     logoImage.current.src = `/${settings.selectedLogo || 'LOGO AFA (1).png'}`;
   }, [settings.selectedLogo]);
@@ -100,7 +114,7 @@ function App() {
       }
     } catch (err) {
       console.error("Error accessing camera:", err);
-      alert("Tidak dapat mengakses kamera. Pastikan izin kamera diberikan. Jika diakses via IP, pastikan menggunakan koneksi HTTPS.");
+      alert("Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.");
     }
   };
 
@@ -112,30 +126,23 @@ function App() {
     setIsLocating(true);
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        async (position) => {
+        (position) => {
           const lat = position.coords.latitude;
           const lng = position.coords.longitude;
           const accuracy = Math.round(position.coords.accuracy);
           
-          try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`);
-            const data = await res.json();
-            const address = data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-            setLocation({ lat, lng, address, accuracy });
-          } catch (e) {
-            setLocation({ lat, lng, address: 'Gagal memuat nama jalan', accuracy });
-          }
+          setCoords({ lat, lng, accuracy });
           setIsLocating(false);
         },
         (error) => {
           console.error(error);
-          setLocation({ lat: 0, lng: 0, address: 'Gagal mendapatkan lokasi GPS', accuracy: 0 });
+          setCoords({ lat: 0, lng: 0, accuracy: 0 });
           setIsLocating(false);
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
       );
     } else {
-      setLocation({ lat: 0, lng: 0, address: 'GPS tidak didukung', accuracy: 0 });
+      setCoords({ lat: 0, lng: 0, accuracy: 0 });
       setIsLocating(false);
     }
   };
@@ -209,89 +216,87 @@ function App() {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
 
-    // Set canvas to video resolution
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
     // 1. Draw Original Video Frame
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    // Save Original Photo
     const originalFilename = `Survey_${settings.surveyCode}_${format(new Date(), 'yyyyMMdd_HHmmss')}_Original.jpg`;
     const originalDataUrl = canvas.toDataURL('image/jpeg', 0.95);
     
-    // Calculate scaling factor between window and canvas
     const scaleX = canvas.width / window.innerWidth;
     const scaleY = canvas.height / window.innerHeight;
 
-    const fontSize = Math.floor(canvas.width * 0.02);
-    const logoSize = Math.floor(canvas.width * 0.12);
-    const paddingX = Math.floor(canvas.width * 0.015);
+    const fontSize = Math.floor(canvas.width * 0.016);
+    const logoSize = Math.floor(canvas.width * 0.08);
+    const padding = Math.floor(canvas.width * 0.015);
+    const borderRadius = 15;
 
-    // Base coordinates mapped from UI to Canvas
     let drawX = watermarkPos.x * scaleX;
     let drawY = watermarkPos.y * scaleY;
 
-    // Logo coordinates
-    const logoX = drawX;
-    const logoY = drawY;
-
-    // 2. Add Watermark Layer
-    ctx.fillStyle = 'white';
-    ctx.shadowColor = 'black';
-    ctx.shadowBlur = 4;
-    ctx.shadowOffsetX = 1;
-    ctx.shadowOffsetY = 1;
+    // Measure bounding box width and height
+    ctx.font = `bold ${fontSize}px monospace`;
+    const titleWidth = ctx.measureText(settings.companyName).width;
     ctx.font = `${fontSize}px monospace`;
-    ctx.textBaseline = 'top';
+    const textLines = [
+      `Surveyor : ${settings.surveyorName}`,
+      `Kode     : ${settings.surveyCode}`,
+      `Lokasi   : ${settings.locationName}`,
+      `Koordinat: ${toDMS(coords.lat, 'lat')}, ${toDMS(coords.lng, 'lng')}`,
+      `Akurasi  : ± ${coords.accuracy}m`,
+      `Waktu    : ${format(currentTime, 'dd MMM yyyy HH:mm:ss')}`
+    ];
+    let maxTextWidth = titleWidth;
+    textLines.forEach(t => {
+      const w = ctx.measureText(t).width;
+      if (w > maxTextWidth) maxTextWidth = w;
+    });
 
-    const textX = drawX + logoSize + paddingX;
-    let textY = drawY;
-    const lineHeight = fontSize * 1.3;
+    const boxWidth = padding + logoSize + padding + maxTextWidth + padding;
+    const boxHeight = padding + (fontSize * 1.4 * 7) + padding;
 
-    // Draw Logo
+    // 2. Draw neat watermark background box
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.beginPath();
+    ctx.roundRect(drawX, drawY, boxWidth, boxHeight, borderRadius);
+    ctx.fill();
+
+    // 3. Draw Logo
+    const logoX = drawX + padding;
+    const logoY = drawY + (boxHeight / 2) - (logoSize / 2); // Center logo vertically
     if (logoImage.current.complete) {
+      // Draw white background for logo just in case
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.beginPath();
+      ctx.roundRect(logoX, logoY, logoSize, logoSize, 8);
+      ctx.fill();
       ctx.drawImage(logoImage.current, logoX, logoY, logoSize, logoSize);
     }
 
-    // Draw Company Name
-    ctx.fillStyle = '#fbbf24';
+    // 4. Draw Texts
+    const textX = logoX + logoSize + padding;
+    let textY = drawY + padding;
+    const lineHeight = fontSize * 1.4;
+
+    ctx.fillStyle = '#fbbf24'; // Amber accent
     ctx.font = `bold ${fontSize}px monospace`;
+    ctx.textBaseline = 'top';
     ctx.fillText(settings.companyName, textX, textY);
     textY += lineHeight;
 
-    // Draw other text
     ctx.fillStyle = 'white';
     ctx.font = `${fontSize}px monospace`;
-    ctx.fillText(`Surveyor : ${settings.surveyorName}`, textX, textY);
-    textY += lineHeight;
-    
-    ctx.fillText(`Kode     : ${settings.surveyCode}`, textX, textY);
-    textY += lineHeight;
-
-    ctx.fillText(`Lokasi   : ${location.lat.toFixed(6)}, ${location.lng.toFixed(6)}`, textX, textY);
-    textY += lineHeight;
-
-    // Wrap address (simple truncation)
-    let displayAddress = location.address;
-    if (displayAddress.length > 55) displayAddress = displayAddress.substring(0, 52) + '...';
-    ctx.fillText(`           ${displayAddress}`, textX, textY);
-    textY += lineHeight;
-
-    ctx.fillText(`Akurasi  : ± ${location.accuracy}m`, textX, textY);
-    textY += lineHeight;
-
-    const formattedDate = format(currentTime, 'dd MMM yyyy HH:mm:ss');
-    ctx.fillText(`Waktu    : ${formattedDate}`, textX, textY);
+    textLines.forEach(line => {
+      ctx.fillText(line, textX, textY);
+      textY += lineHeight;
+    });
 
     // Save Watermark Photo
     const watermarkFilename = `Survey_${settings.surveyCode}_${format(new Date(), 'yyyyMMdd_HHmmss')}_Watermark.jpg`;
     const watermarkDataUrl = canvas.toDataURL('image/jpeg', 0.95);
 
-    // Trigger both downloads
     downloadImage(originalDataUrl, originalFilename);
-    
-    // Add small delay to prevent browser blocking multiple downloads
     setTimeout(() => {
       downloadImage(watermarkDataUrl, watermarkFilename);
     }, 500);
@@ -299,10 +304,8 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* Flash Effect */}
       <div className={`flash-overlay ${isFlashing ? 'active' : ''}`}></div>
 
-      {/* Camera View */}
       <video 
         ref={videoRef} 
         className="camera-view" 
@@ -312,7 +315,6 @@ function App() {
       />
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-      {/* UI Layer */}
       <div className="ui-layer">
         
         <div className="top-bar">
@@ -324,19 +326,13 @@ function App() {
             <button className="icon-btn" onClick={getLocation} title="Kalibrasi Lokasi">
               <MapPin size={24} className={isLocating ? 'spinning' : ''} />
             </button>
-            
-            {(deferredPrompt || isIOS) && (
-              <button className="btn-install" onClick={handleInstallClick}>
-                <Download size={16} /> Install App
-              </button>
-            )}
           </div>
         </div>
 
-        {/* Draggable Timestamp Preview */}
+        {/* Neat Draggable Timestamp Preview */}
         <div 
           ref={watermarkRef}
-          className="timestamp-preview"
+          className="timestamp-preview neat-box"
           style={{
             top: watermarkPos.y === -1 ? 'auto' : watermarkPos.y,
             left: watermarkPos.x,
@@ -347,14 +343,16 @@ function App() {
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
         >
-          <img src={`/${settings.selectedLogo || 'LOGO AFA (1).png'}`} alt="Logo" className="logo-preview" draggable={false} />
+          <div className="logo-container">
+            <img src={`/${settings.selectedLogo || 'LOGO AFA (1).png'}`} alt="Logo" className="logo-preview" draggable={false} />
+          </div>
           <div className="timestamp-text-container">
             <span className="accent">{settings.companyName}</span>
             <span>Surveyor : {settings.surveyorName}</span>
             <span>Kode     : {settings.surveyCode}</span>
-            <span>Lokasi   : {location.lat.toFixed(6)}, {location.lng.toFixed(6)}</span>
-            <span style={{ fontSize: '0.65rem' }}>{location.address}</span>
-            <span>Akurasi  : ± {location.accuracy}m</span>
+            <span>Lokasi   : {settings.locationName}</span>
+            <span>Koordinat: {toDMS(coords.lat, 'lat')}, {toDMS(coords.lng, 'lng')}</span>
+            <span>Akurasi  : ± {coords.accuracy}m</span>
             <span>Waktu    : {format(currentTime, 'dd MMM yyyy HH:mm:ss')}</span>
           </div>
         </div>
@@ -369,7 +367,6 @@ function App() {
         </div>
       </div>
 
-      {/* Settings Modal */}
       {showSettings && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -379,6 +376,19 @@ function App() {
                 <X size={24} />
               </button>
             </div>
+            
+            {(deferredPrompt || isIOS) && (
+              <div className="install-banner">
+                <div className="install-text">
+                  <strong>Install Aplikasi</strong>
+                  <p>Pasang aplikasi ini di layar utama HP Anda.</p>
+                </div>
+                <button className="btn-install" onClick={handleInstallClick}>
+                  <Download size={16} /> Install
+                </button>
+              </div>
+            )}
+
             <form onSubmit={saveSettings}>
               <div className="form-group">
                 <label>Logo Perusahaan</label>
@@ -415,6 +425,16 @@ function App() {
                   type="text" 
                   value={settings.surveyCode} 
                   onChange={(e) => setSettings({...settings, surveyCode: e.target.value})}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Nama Lokasi (Manual)</label>
+                <input 
+                  type="text" 
+                  value={settings.locationName || ''} 
+                  onChange={(e) => setSettings({...settings, locationName: e.target.value})}
+                  placeholder="Contoh: Gedung Pusat"
                   required
                 />
               </div>
