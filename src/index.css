@@ -1,0 +1,36 @@
+:root {
+  --primary: #0f172a;
+  --primary-foreground: #f8fafc;
+  --secondary: #1e293b;
+  --accent: #d97706; /* Gold accent */
+  --accent-hover: #b45309;
+  --danger: #ef4444;
+  --surface: rgba(15, 23, 42, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+  overflow: hidden; /* Prevent scrolling in camera app */
+  touch-action: none; 
+}
+
+input, button {
+  font-family: inherit;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: var(--surface);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--glass-border);
+}
